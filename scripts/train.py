@@ -5,6 +5,7 @@ import torch_ac
 import tensorboardX
 import sys
 
+import minigrid
 import utils
 from utils import device
 from model import ACModel
@@ -127,14 +128,20 @@ if __name__ == "__main__":
 
     # Load algo
 
+    # Original BabyAI uses 20.0
+    reward_scale = 1.0
+    reshape_reward = lambda _0, _1, reward, _2: reward_scale * reward
+
     if args.algo == "a2c":
         algo = torch_ac.A2CAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                 args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_alpha, args.optim_eps, preprocess_obss)
+                                args.optim_alpha, args.optim_eps, preprocess_obss,
+                                reshape_reward)
     elif args.algo == "ppo":
         algo = torch_ac.PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                 args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss,
+                                reshape_reward)
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 

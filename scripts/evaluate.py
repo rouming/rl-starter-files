@@ -3,6 +3,7 @@ import time
 import torch
 from torch_ac.utils.penv import ParallelEnv
 
+import minigrid
 import utils
 from utils import device
 

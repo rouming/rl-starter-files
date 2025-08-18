@@ -1,6 +1,7 @@
 import argparse
 import numpy
 
+import minigrid
 import utils
 from utils import device
 
