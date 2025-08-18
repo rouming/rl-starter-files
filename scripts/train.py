@@ -128,8 +128,9 @@ if __name__ == "__main__":
 
     # Load algo
 
-    # Original BabyAI uses 20.0
-    reward_scale = 1.0
+    # Scale as in original BabyAI, otherwise success_rate never reaches 1,
+    # entropy never drops to 0, so everything is bad
+    reward_scale = 20.0
     reshape_reward = lambda _0, _1, reward, _2: reward_scale * reward
 
     if args.algo == "a2c":
