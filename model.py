@@ -51,9 +51,12 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         self.use_text = use_text
         self.use_memory = use_memory
 
+        image_shape = obs_space["image"]
+        nr_channels = image_shape[-1]
+
         if arch == "cnn1":
             self.image_conv = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=16, kernel_size=(2, 2)),
+                nn.Conv2d(in_channels=nr_channels, out_channels=16, kernel_size=(2, 2)),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=(2, 2), stride=2),
                 nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(2, 2)),
@@ -66,7 +69,7 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
                 raise ValueError("FiLM architecture can be used when instructions are enabled")
 
             self.image_conv = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=128, kernel_size=(2, 2), padding=1),
+                nn.Conv2d(in_channels=nr_channels, out_channels=128, kernel_size=(2, 2), padding=1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=(2, 2), stride=2),
@@ -79,9 +82,14 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         else:
             raise ValueError("Incorrect architecture name: {}".format(arch))
 
-        n = obs_space["image"][0]
-        m = obs_space["image"][1]
-        self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*128
+        # Calculate image embedding size
+        dummy = torch.zeros(1, *image_shape[::-1])
+        if arch.startswith("expert_filmcnn"):
+            dummy = self.image_conv(dummy)
+            dummy = self.film_pool(dummy)
+        else:
+            dummy = self.image_conv(dummy)
+        self.image_embedding_size = dummy.numel()
 
         # Define memory
         if self.use_memory:
