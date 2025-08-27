@@ -6,6 +6,8 @@ import torch_ac
 
 # XXX
 arch = "expert_filmcnn"
+#arch = "cnn1"
+#arch = "cnn2"
 
 lang_model = "gru"
 instr_dim = 128
@@ -42,6 +44,52 @@ class ExpertControllerFiLM(nn.Module):
         out = F.relu(out)
         return out
 
+# https://medium.com/@dlgkswn3124/summary-squeeze-and-excitation-networks-senet-a510e902e668
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()
+        self.main_path = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels)
+        )
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        out = self.main_path(x)
+        out += self.shortcut(x)
+        out = self.relu(out)
+        return out
+
+class CombinedCNN(nn.Module):
+    def __init__(self, in_channels=16, output_dim=128):
+        super(CombinedCNN, self).__init__()
+
+        self.network = nn.Sequential(
+            # Feature Extraction Part
+            nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            ResidualBlock(64, 128, stride=2),
+            ResidualBlock(128, 256, stride=2),
+
+            # Head Part
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, output_dim)
+        )
+
+    def forward(self, x):
+        # The forward pass is now just a single call
+        return self.network(x)
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
@@ -64,6 +112,9 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
                 nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(2, 2)),
                 nn.ReLU()
             )
+        elif arch == "cnn2":
+            self.image_conv = CombinedCNN(in_channels=nr_channels, output_dim=128)
+
         elif arch.startswith("expert_filmcnn"):
             if not self.use_text:
                 raise ValueError("FiLM architecture can be used when instructions are enabled")
