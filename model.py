@@ -5,9 +5,12 @@ from torch.distributions.categorical import Categorical
 import torch_ac
 
 # XXX
-arch = "expert_filmcnn"
+#arch = "expert_filmcnn"
 #arch = "cnn1"
 #arch = "cnn2"
+arch = "cnn3"
+
+output_dim = 256
 
 lang_model = "gru"
 instr_dim = 128
@@ -91,6 +94,43 @@ class CombinedCNN(nn.Module):
         # The forward pass is now just a single call
         return self.network(x)
 
+class SimpleCNN(nn.Module):
+    def __init__(self, in_channels=16, output_dim=128):
+        super(SimpleCNN, self).__init__()
+
+        self.network = nn.Sequential(
+            # Initial convolution
+            nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            # --- First ResidualBlock replaced ---
+            # This layer doubles the channels (64->128) and halves the grid size (stride=2)
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # Downsamples
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1), # No downsampling
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            # --- Second ResidualBlock replaced ---
+            # This layer doubles the channels (128->256) and halves the grid size (stride=2)
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # Downsamples
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1), # No downsampling
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            # Head Part (untouched)
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, output_dim)
+        )
+
+    def forward(self, x):
+        return self.network(x)
+
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
         super().__init__()
@@ -100,11 +140,11 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         self.use_memory = use_memory
 
         image_shape = obs_space["image"]
-        nr_channels = image_shape[-1]
+        in_channels = image_shape[-1]
 
         if arch == "cnn1":
             self.image_conv = nn.Sequential(
-                nn.Conv2d(in_channels=nr_channels, out_channels=16, kernel_size=(2, 2)),
+                nn.Conv2d(in_channels=in_channels, out_channels=16, kernel_size=(2, 2)),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=(2, 2), stride=2),
                 nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(2, 2)),
@@ -113,14 +153,17 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
                 nn.ReLU()
             )
         elif arch == "cnn2":
-            self.image_conv = CombinedCNN(in_channels=nr_channels, output_dim=128)
+            self.image_conv = CombinedCNN(in_channels=in_channels, output_dim=output_dim)
+
+        elif arch == "cnn3":
+            self.image_conv = SimpleCNN(in_channels=in_channels, output_dim=output_dim)
 
         elif arch.startswith("expert_filmcnn"):
             if not self.use_text:
                 raise ValueError("FiLM architecture can be used when instructions are enabled")
 
             self.image_conv = nn.Sequential(
-                nn.Conv2d(in_channels=nr_channels, out_channels=128, kernel_size=(2, 2), padding=1),
+                nn.Conv2d(in_channels=in_channels, out_channels=128, kernel_size=(2, 2), padding=1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=(2, 2), stride=2),
